@@ -41,12 +41,6 @@ const router = createRouter({
           meta: { title: '用户管理' }
         },
         {
-          path: 'notes',
-          name: 'Notes',
-          component: () => import('@/views/NotesView.vue'),
-          meta: { title: '学习笔记' }
-        },
-        {
           path: 'learning-records',
           name: 'LearningRecords',
           component: () => import('@/views/LearningRecordsView.vue'),

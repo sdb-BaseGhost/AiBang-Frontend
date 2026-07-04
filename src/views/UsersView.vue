@@ -3,11 +3,15 @@
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>用户列表</span>
+          <span>用户管理</span>
           <div class="header-right">
+            <el-select v-model="filterRole" placeholder="角色筛选" clearable style="width: 120px; margin-right: 8px" @change="handleSearch">
+              <el-option label="学生" value="STUDENT" />
+              <el-option label="管理员" value="ADMIN" />
+            </el-select>
             <el-input
               v-model="searchText"
-              placeholder="搜索用户名"
+              placeholder="搜索用户名/昵称/邮箱"
               style="width: 200px; margin-right: 12px"
               clearable
               @clear="handleSearch"
@@ -17,27 +21,32 @@
                 <el-button icon="Search" @click="handleSearch" />
               </template>
             </el-input>
-            <el-button type="primary" @click="handleAdd">
-              <el-icon><Plus /></el-icon>
-              新增用户
-            </el-button>
           </div>
         </div>
       </template>
 
       <el-table v-loading="loading" :data="userList" border style="width: 100%">
-        <el-table-column prop="id" label="ID" width="80" />
-        <el-table-column prop="username" label="用户名" />
-        <el-table-column prop="email" label="邮箱" />
-        <el-table-column prop="phone" label="手机号" />
-        <el-table-column prop="status" label="状态">
+        <el-table-column prop="userId" label="ID" width="70" />
+        <el-table-column prop="username" label="用户名" width="120" />
+        <el-table-column prop="nickname" label="昵称" width="120" />
+        <el-table-column prop="email" label="邮箱" show-overflow-tooltip />
+        <el-table-column prop="phone" label="手机号" width="130" />
+        <el-table-column prop="role" label="角色" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.status === 1 ? 'success' : 'danger'">
-              {{ row.status === 1 ? '启用' : '禁用' }}
+            <el-tag :type="row.role === 'ADMIN' ? 'danger' : 'primary'">
+              {{ row.role === 'ADMIN' ? '管理员' : '学生' }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="180" />
+      
+        <el-table-column prop="totalStudyHours" label="学习时长(h)" width="110" />
+        <el-table-column prop="createTime" label="创建时间" width="170" />
+        <el-table-column label="操作" width="240" fixed="right">
+          <template #default="{ row }">
+            <el-button type="warning" link @click="handleResetPwd(row)">重置密码</el-button>
+            <el-button type="info" link @click="handleChangeRole(row)">修改角色</el-button>
+          </template>
+        </el-table-column>
       </el-table>
 
       <el-pagination
@@ -52,28 +61,22 @@
       />
     </el-card>
 
-    <!-- 新增用户对话框 -->
-    <el-dialog v-model="dialogVisible" title="新增用户" width="500px" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="form.username" placeholder="请输入用户名" />
+    <!-- 修改角色对话框 -->
+    <el-dialog v-model="roleDialogVisible" title="修改用户角色" width="400px" destroy-on-close>
+      <el-form label-width="80px">
+        <el-form-item label="用户">
+          <span>{{ currentUser?.nickname || currentUser?.username }}</span>
         </el-form-item>
-        <el-form-item label="邮箱" prop="email">
-          <el-input v-model="form.email" placeholder="请输入邮箱" />
-        </el-form-item>
-        <el-form-item label="手机号" prop="phone">
-          <el-input v-model="form.phone" placeholder="请输入手机号" maxlength="11" />
-        </el-form-item>
-        <el-form-item label="状态" prop="status">
-          <el-radio-group v-model="form.status">
-            <el-radio :value="1">启用</el-radio>
-            <el-radio :value="0">禁用</el-radio>
+        <el-form-item label="角色">
+          <el-radio-group v-model="editRole">
+            <el-radio value="STUDENT">学生</el-radio>
+            <el-radio value="ADMIN">管理员</el-radio>
           </el-radio-group>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit">确定</el-button>
+        <el-button @click="roleDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitRoleChange">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -81,15 +84,18 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { Plus } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
-import { getUserList } from '@/api/user'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { getAdminUserList, updateUserRole, updateUserStatus, resetUserPassword } from '@/api/user'
 
 const loading = ref(false)
 const searchText = ref('')
+const filterRole = ref('')
+const filterStatus = ref('')
 const userList = ref([])
-const dialogVisible = ref(false)
-const formRef = ref(null)
+
+const roleDialogVisible = ref(false)
+const currentUser = ref(null)
+const editRole = ref('')
 
 const pagination = reactive({
   page: 1,
@@ -97,45 +103,24 @@ const pagination = reactive({
   total: 0
 })
 
-
-const form = reactive({
-  username: '',
-  email: '',
-  phone: '',
-  status: 1
-})
-
-const phoneValidator = (rule, value, callback) => {
-  if (!value) return callback(new Error('请输入手机号'))
-  if (!/^1[3-9]\d{9}$/.test(value)) return callback(new Error('手机号格式不正确'))
-  callback()
-}
-
-const emailValidator = (rule, value, callback) => {
-  if (!value) return callback(new Error('请输入邮箱'))
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return callback(new Error('邮箱格式不正确'))
-  callback()
-}
-
-const rules = {
-  username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 2, max: 20, message: '长度在 2 到 20 个字符', trigger: 'blur' }
-  ],
-  email: [{ required: true, validator: emailValidator, trigger: 'blur' }],
-  phone: [{ required: true, validator: phoneValidator, trigger: 'blur' }],
-  status: [{ required: true, message: '请选择状态', trigger: 'change' }]
-}
-
+/**
+ * 获取用户列表
+ * 调用 GET /api/admin/user/list
+ */
 const fetchUsers = async () => {
   loading.value = true
   try {
-    const res = await getUserList({
-      username: searchText.value,
+    const res = await getAdminUserList({
       page: pagination.page,
-      pageSize: pagination.pageSize
+      size: pagination.pageSize,
+      keyword: searchText.value || undefined,
+      role: filterRole.value || undefined,
+      status: filterStatus.value || undefined,
+      sortBy: 'createTime',
+      sortOrder: 'desc'
     })
-    userList.value = res.list
+    // 响应拦截器已提取 data 字段: { records, total, current, size, pages }
+    userList.value = res.records
     pagination.total = res.total
   } catch (err) {
     console.error('获取用户列表失败:', err)
@@ -158,30 +143,68 @@ const handleCurrentChange = () => {
   fetchUsers()
 }
 
-const handleAdd = () => {
-  form.username = ''
-  form.email = ''
-  form.phone = ''
-  form.status = 1
-  dialogVisible.value = true
+/**
+ * 禁用/启用用户
+ * 调用 PUT /api/admin/user/{userId}/status
+ */
+const handleToggleStatus = async (row) => {
+  const newStatus = row.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE'
+  const action = newStatus === 'DISABLED' ? '禁用' : '启用'
+  try {
+    await ElMessageBox.confirm(`确定要${action}用户「${row.nickname || row.username}」吗？`, '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    await updateUserStatus(row.userId, { status: newStatus })
+    ElMessage.success(`${action}成功`)
+    fetchUsers()
+  } catch (err) {
+    if (err !== 'cancel') {
+      console.error(`${action}用户失败:`, err)
+    }
+  }
 }
 
-const handleSubmit = () => {
-  formRef.value.validate((valid) => {
-    if (!valid) return
-    const newId = allData.length ? Math.max(...allData.map(u => u.id)) + 1 : 1
-    allData.push({
-      id: newId,
-      username: form.username,
-      email: form.email,
-      phone: form.phone,
-      status: form.status,
-      createTime: new Date().toLocaleString('zh-CN')
+/**
+ * 重置用户密码
+ * 调用 POST /api/admin/user/{userId}/reset-password
+ */
+const handleResetPwd = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确定要重置用户「${row.nickname || row.username}」的密码吗？`, '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
     })
-    ElMessage.success('新增成功')
-    dialogVisible.value = false
+    const res = await resetUserPassword(row.userId)
+    ElMessage.success(`密码已重置，临时密码: ${res.tempPassword}`)
+  } catch (err) {
+    if (err !== 'cancel') {
+      console.error('重置密码失败:', err)
+    }
+  }
+}
+
+/**
+ * 修改用户角色
+ * 调用 PUT /api/admin/user/{userId}/role
+ */
+const handleChangeRole = (row) => {
+  currentUser.value = row
+  editRole.value = row.role
+  roleDialogVisible.value = true
+}
+
+const submitRoleChange = async () => {
+  try {
+    await updateUserRole(currentUser.value.userId, { role: editRole.value })
+    ElMessage.success('角色修改成功')
+    roleDialogVisible.value = false
     fetchUsers()
-  })
+  } catch (err) {
+    console.error('修改角色失败:', err)
+  }
 }
 
 onMounted(() => {

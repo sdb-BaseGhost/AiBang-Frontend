@@ -21,10 +21,6 @@
           <el-icon><User /></el-icon>
           <template #title>用户管理</template>
         </el-menu-item>
-        <el-menu-item index="/notes">
-          <el-icon><Document /></el-icon>
-          <template #title>学习笔记</template>
-        </el-menu-item>
         <el-menu-item index="/learning-records">
           <el-icon><Reading /></el-icon>
           <template #title>学习记录</template>
@@ -50,7 +46,7 @@
         <div class="header-right">
           <el-dropdown @command="handleCommand">
             <span class="el-dropdown-link">
-              {{ userStore.userInfo.username || '用户' }}
+              {{ userStore.userInfo.nickname || userStore.userInfo.username || '用户' }}
               <el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </span>
             <template #dropdown>

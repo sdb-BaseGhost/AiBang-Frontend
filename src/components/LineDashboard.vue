@@ -25,7 +25,22 @@
       <template #header>
         <div class="card-header">
           <span class="title">📈 学时变动趋势看板</span>
-          <span class="subtitle">过去一周学习时长统计</span>
+          <div class="header-right">
+            <el-select
+              v-model="selectedUserId"
+              placeholder="选择用户"
+              filterable
+              style="width: 200px"
+              @change="handleUserChange"
+            >
+              <el-option
+                v-for="u in userList"
+                :key="u.userId"
+                :label="u.nickname ? `${u.nickname} (${u.username})` : u.username"
+                :value="u.userId"
+              />
+            </el-select>
+          </div>
         </div>
       </template>
     </el-card>
@@ -51,7 +66,7 @@
               <el-icon :size="24"><Timer /></el-icon>
             </div>
             <div class="stat-info">
-              <div class="stat-value">{{ totalHours }} 小时</div>
+              <div class="stat-value">{{ totalHours }} 分钟</div>
               <div class="stat-label">本周总学时</div>
             </div>
           </div>
@@ -64,7 +79,7 @@
               <el-icon :size="24"><TrendCharts /></el-icon>
             </div>
             <div class="stat-info">
-              <div class="stat-value">{{ averageHours }} 小时</div>
+              <div class="stat-value">{{ averageHours }} 分钟</div>
               <div class="stat-label">日均学时</div>
             </div>
           </div>
@@ -77,7 +92,7 @@
               <el-icon :size="24"><Trophy /></el-icon>
             </div>
             <div class="stat-info">
-              <div class="stat-value">{{ maxHours }} 小时</div>
+              <div class="stat-value">{{ maxHours }} 分钟</div>
               <div class="stat-label">最高单日学时</div>
             </div>
           </div>
@@ -85,32 +100,7 @@
       </el-col>
     </el-row>
 
-    <!-- 详细数据表格 -->
-    <el-card class="table-card">
-      <template #header>
-        <span class="card-header-title">📋 每日学时详情</span>
-      </template>
-      <el-table :data="weeklyData" border stripe style="width: 100%">
-        <el-table-column prop="day" label="日期" width="120" align="center" />
-        <el-table-column prop="hours" label="学习时长（小时）" align="center">
-          <template #default="{ row }">
-            <el-tag :type="getTagType(row.hours)" effect="dark">
-              {{ row.hours }} 小时
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="status" label="完成状态" align="center">
-          <template #default="{ row }">
-            <el-icon :color="row.status === '已完成' ? '#67c23a' : '#909399'">
-              <component :is="row.status === '已完成' ? 'CircleCheckFilled' : 'CircleCloseFilled'" />
-            </el-icon>
-            <span :style="{ color: row.status === '已完成' ? '#67c23a' : '#909399', marginLeft: '8px' }">
-              {{ row.status }}
-            </span>
-          </template>
-        </el-table-column>
-      </el-table>
-    </el-card>
+    
   </div>
 </template>
 
@@ -132,48 +122,27 @@ import { Timer, TrendCharts, Trophy, CircleCheckFilled, CircleCloseFilled } from
 // ============================================
 // 导入 ECharts 图表库
 // ============================================
-// * as echarts 表示导入 echarts 的所有功能
-// 在实际项目中，为了减小打包体积，建议按需导入
 import * as echarts from 'echarts'
+
+// 导入 API
+import { getDashboard, getAdminUserList } from '@/api/user'
 
 // ============================================
 // 响应式状态变量定义
 // ============================================
 
-/**
- * chartRef - 图表容器的 DOM 引用
- *
- * 使用 ref(null) 创建一个初始值为 null 的响应式引用
- * 当模板渲染完成后，chartRef.value 会自动绑定到对应的 DOM 元素
- * ECharts 需要这个 DOM 元素作为渲染容器
- */
 const chartRef = ref(null)
-
-/**
- * chartInstance - ECharts 图表实例
- *
- * 用于存储 ECharts 初始化后的实例对象
- * 通过这个实例可以调用 ECharts 的各种方法
- * 比如：设置配置项、调整大小、销毁实例等
- */
 let chartInstance = null
+
+// 用户选择
+const userList = ref([])
+const selectedUserId = ref(null)
 
 /**
  * weeklyData - 一周学时数据
- *
- * 模拟过去一周每天的学习时长数据
- * 在实际项目中，这些数据应该从后端 API 获取
- * 这里使用静态数据进行演示
+ * 初始为空数组，数据将从后端 API 获取
  */
-const weeklyData = ref([
-  { day: '周一', hours: 2.5, status: '已完成' },
-  { day: '周二', hours: 3.0, status: '已完成' },
-  { day: '周三', hours: 1.5, status: '已完成' },
-  { day: '周四', hours: 4.0, status: '已完成' },
-  { day: '周五', hours: 2.0, status: '已完成' },
-  { day: '周六', hours: 5.0, status: '已完成' },
-  { day: '周日', hours: 3.5, status: '已完成' }
-])
+const weeklyData = ref([])
 
 // ============================================
 // 计算属性
@@ -248,31 +217,54 @@ const getTagType = (hours) => {
  * 3. 配置图表选项
  * 4. 渲染图表
  */
+/**
+ * 日期字符串转星期标签
+ * "2026-06-16" → "周一" / "6/16"
+ */
+const formatDateLabel = (dateStr) => {
+  const d = new Date(dateStr)
+  const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  return `${d.getMonth() + 1}/${d.getDate()} ${weekDays[d.getDay()]}`
+}
+
+/**
+ * 从后端获取仪表盘数据并更新 weeklyData
+ * 调用 GET /api/admin/dashboard?userId=xxx
+ */
+const fetchData = async () => {
+  if (!selectedUserId.value) return
+  try {
+    const data = await getDashboard({ userId: selectedUserId.value })
+    if (data.weeklyTrend && data.weeklyTrend.length) {
+      weeklyData.value = data.weeklyTrend.map(item => ({
+        day: formatDateLabel(item.date),
+        hours: item.hours,
+        status: item.hours > 0 ? '已完成' : '未完成'
+      }))
+    }
+  } catch (err) {
+    console.error('获取学时看板数据失败:', err)
+    // 使用默认数据兜底
+    weeklyData.value = [
+      { day: '周一', hours: 0, status: '未完成' },
+      { day: '周二', hours: 0, status: '未完成' },
+      { day: '周三', hours: 0, status: '未完成' },
+      { day: '周四', hours: 0, status: '未完成' },
+      { day: '周五', hours: 0, status: '未完成' },
+      { day: '周六', hours: 0, status: '未完成' },
+      { day: '周日', hours: 0, status: '未完成' },
+    ]
+  }
+}
+
 const initChart = () => {
-  // ============================================
-  // 第一步：获取 DOM 容器
-  // ============================================
-  // chartRef.value 就是模板中 ref="chartRef" 绑定的 DOM 元素
-  // 必须确保 DOM 元素存在才能初始化 ECharts
   if (!chartRef.value) {
     console.error('图表容器 DOM 元素未找到')
     return
   }
 
-  // ============================================
-  // 第二步：初始化 ECharts 实例
-  // ============================================
-  // echarts.init() 方法用于初始化一个 ECharts 实例
-  // 参数：DOM 容器元素
-  // 返回：ECharts 实例对象
-  // 后续所有图表操作都通过这个实例进行
   chartInstance = echarts.init(chartRef.value)
 
-  // ============================================
-  // 第三步：配置图表选项 (Option)
-  // ============================================
-  // ECharts 的所有配置都在 option 对象中
-  // 这是 ECharts 最核心的部分，决定了图表的外观和行为
   const option = {
     // ============================================
     // 标题配置 (title)
@@ -306,7 +298,7 @@ const initChart = () => {
         const data = params[0]
         return `
           <div style="font-weight: bold; margin-bottom: 5px;">${data.name}</div>
-          <div>学习时长：${data.value} 小时</div>
+          <div>学习时长：${data.value} 分钟</div>
         `
       }
     },
@@ -350,7 +342,7 @@ const initChart = () => {
     // 纵坐标配置，代表学习学时
     yAxis: {
       type: 'value',              // 数值轴：适用于连续数值数据
-      name: '学习时长（小时）',    // Y 轴名称
+      name: '学习时长（分钟）',    // Y 轴名称
       nameTextStyle: {
         color: '#666',            // Y 轴名称颜色
         fontSize: 12              // Y 轴名称字体大小
@@ -441,6 +433,23 @@ const handleWindowResize = () => {
 // 生命周期钩子
 // ============================================
 
+/** 用户切换时重新加载数据 */
+const handleUserChange = async () => {
+  await fetchData()
+  if (chartInstance) {
+    updateChart()
+  }
+}
+
+/** 更新图表数据（不重新初始化） */
+const updateChart = () => {
+  if (!chartInstance) return
+  chartInstance.setOption({
+    xAxis: { data: weeklyData.value.map(item => item.day) },
+    series: [{ data: chartData.value }]
+  })
+}
+
 /**
  * onMounted - 组件挂载完成后执行
  *
@@ -450,12 +459,24 @@ const handleWindowResize = () => {
  * - 可以安全地访问 DOM 元素
  * - 是初始化 ECharts 的最佳时机
  */
-onMounted(() => {
-  // 初始化折线图
+onMounted(async () => {
+  // 先获取用户列表，自动选中第一个
+  try {
+    const userData = await getAdminUserList({ page: 1, size: 999 })
+    userList.value = userData.records
+    if (userList.value.length > 0) {
+      selectedUserId.value = userList.value[0].userId
+    }
+  } catch (err) {
+    console.error('获取用户列表失败:', err)
+  }
+
+  // 再从后端获取数据
+  await fetchData()
+  // 数据加载完成后初始化折线图
   initChart()
 
   // 添加窗口大小变化监听器
-  // 当窗口大小变化时，自动调整图表大小
   window.addEventListener('resize', handleWindowResize)
 
   console.log('LineDashboard 组件已挂载')
@@ -502,6 +523,12 @@ onBeforeUnmount(() => {
 .card-header {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+}
+
+/* 头部右侧 */
+.header-right {
+  display: flex;
   align-items: center;
 }
 

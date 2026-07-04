@@ -109,11 +109,15 @@ const handleLogin = () => {
     if (valid) {
       loading.value = true
       try {
+        // 调用 POST /api/auth/login
+        // 响应拦截器已提取 data 字段: { accessToken, refreshToken, expiresIn, user }
         const res = await loginApi({ username: loginForm.username, password: loginForm.password })
-        userStore.login(res.token, res.userInfo)
+        // 保存 accessToken、refreshToken 和用户信息
+        userStore.login(res.accessToken, res.refreshToken, res.user)
         ElMessage.success('登录成功')
         router.push('/home')
       } catch (err) {
+        // 响应拦截器已通过 ElMessage 显示错误，此处仅记录日志
         console.error('登录失败:', err)
       } finally {
         loading.value = false

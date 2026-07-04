@@ -9,51 +9,13 @@
               <el-icon :size="30"><User /></el-icon>
             </div>
             <div class="stat-info">
-              <div class="stat-value">1,234</div>
+              <div class="stat-value">{{ dashboard.userStats?.totalUsers ?? '-' }}</div>
               <div class="stat-label">用户总数</div>
             </div>
           </div>
         </el-card>
       </el-col>
-      <el-col :xs="24" :sm="12" :md="6">
-        <el-card shadow="hover" class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon" style="background-color: #67C23A;">
-              <el-icon :size="30"><Document /></el-icon>
-            </div>
-            <div class="stat-info">
-              <div class="stat-value">567</div>
-              <div class="stat-label">文章数量</div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :xs="24" :sm="12" :md="6">
-        <el-card shadow="hover" class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon" style="background-color: #E6A23C;">
-              <el-icon :size="30"><ChatDotRound /></el-icon>
-            </div>
-            <div class="stat-info">
-              <div class="stat-value">8,901</div>
-              <div class="stat-label">评论数量</div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :xs="24" :sm="12" :md="6">
-        <el-card shadow="hover" class="stat-card">
-          <div class="stat-content">
-            <div class="stat-icon" style="background-color: #F56C6C;">
-              <el-icon :size="30"><View /></el-icon>
-            </div>
-            <div class="stat-info">
-              <div class="stat-value">12,345</div>
-              <div class="stat-label">访问量</div>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
+      
     </el-row>
 
     <!-- 图表区域 -->
@@ -61,79 +23,126 @@
       <el-col :xs="24" :md="12">
         <el-card class="chart-card">
           <template #header>
-            <span class="card-header">近 7 天 AI 调用次数</span>
+            <span class="card-header">近 7 天 AI Token 消耗趋势</span>
           </template>
-          <div ref="barChartRef" class="chart-container"></div>
+          <div ref="lineChartRef1" class="chart-container"></div>
         </el-card>
       </el-col>
       <el-col :xs="24" :md="12">
         <el-card class="chart-card">
           <template #header>
-            <span class="card-header">近 30 天用户增长趋势</span>
+            <span class="card-header">近 7 天用户活跃趋势</span>
           </template>
           <div ref="lineChartRef" class="chart-container"></div>
         </el-card>
       </el-col>
     </el-row>
 
-    <!-- 欢迎卡片 -->
-    <el-card class="welcome-card">
-      <template #header>
-        <span class="card-header">欢迎来到管理后台</span>
-      </template>
-      <p>这是一个基于 Vue3 + Element Plus 构建的管理后台系统。</p>
-      <p>左侧菜单可以导航到不同功能页面。</p>
-    </el-card>
+    <!-- 技能完成率排行 -->
+    <el-row :gutter="20" class="chart-row">
+      <el-col :xs="24" :md="12">
+        <el-card class="chart-card">
+          <template #header>
+            <span class="card-header">🔥 技能完成率排行 Top</span>
+          </template>
+          <div v-if="dashboard.skillStats?.topSkills?.length" class="skill-rank-list">
+            <div v-for="(skill, index) in dashboard.skillStats.topSkills" :key="index" class="skill-rank-item">
+              <span class="rank-badge" :class="{ 'rank-top': index < 3 }">{{ index + 1 }}</span>
+              <span class="skill-name">{{ skill.skillName }}</span>
+              <el-progress :percentage="skill.completionRate" :stroke-width="10" style="flex: 1; margin: 0 12px;" />
+              <!-- <span class="skill-rate">{{ skill.completionRate }}%</span> -->
+            </div>
+          </div>
+          <el-empty v-else description="暂无数据" :image-size="60" />
+        </el-card>
+      </el-col>
+      
+    </el-row>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
-import { User, Document, ChatDotRound, View } from '@element-plus/icons-vue'
+import { User } from '@element-plus/icons-vue'
+import { getDashboard } from '@/api/user'
 
-const barChartRef = ref(null)
+const lineChartRef1 = ref(null)
 const lineChartRef = ref(null)
-let barChart = null
+let lineChart1 = null
 let lineChart = null
 
-// 近 7 天日期
-const getLast7Days = () => {
-  const dates = []
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    dates.push(`${d.getMonth() + 1}/${d.getDate()}`)
-  }
-  return dates
+// 仪表盘数据
+const dashboard = reactive({
+  userStats: null,
+  learningStats: null,
+  aiStats: null,
+  skillStats: null,
+  weeklyTrend: []
+})
+
+// 日期格式化: "2026-06-16" → "6/16"
+const formatDate = (dateStr) => {
+  const d = new Date(dateStr)
+  return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
-// 近 30 天日期
-const getLast30Days = () => {
-  const dates = []
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
-    dates.push(`${d.getMonth() + 1}/${d.getDate()}`)
-  }
-  return dates
+// 初始化 AI Token 消耗趋势折线图（使用 weeklyTrend 中的 tokens 数据）
+const initTokenLineChart = () => {
+  if (!lineChartRef1.value) return
+  lineChart1 = echarts.init(lineChartRef1.value)
+  const dates = dashboard.weeklyTrend.map(item => formatDate(item.date))
+  const tokenData = dashboard.weeklyTrend.map(item => item.tokens || 0)
+  lineChart1.setOption({
+    tooltip: {
+      trigger: 'axis',
+      formatter: function(params) {
+        const data = params[0]
+        return `${data.axisValue}<br/>Token 消耗: ${data.value.toLocaleString()} tokens`
+      }
+    },
+    xAxis: {
+      type: 'category',
+      data: dates,
+      axisLabel: { color: '#666' }
+    },
+    yAxis: {
+      type: 'value',
+      axisLabel: {
+        color: '#666',
+        formatter: '{value} tokens'
+      }
+    },
+    grid: { left: '10%', right: '5%', top: '10%', bottom: '15%' },
+    series: [{
+      data: tokenData,
+      type: 'line',
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 6,
+      lineStyle: { color: '#409EFF', width: 2 },
+      itemStyle: { color: '#409EFF' },
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: 'rgba(64,158,255,0.3)' },
+          { offset: 1, color: 'rgba(64,158,255,0.05)' }
+        ])
+      }
+    }]
+  })
 }
 
-// Mock 数据
-const aiCallData = [120, 200, 150, 80, 230, 180, 260]
-const userGrowthData = [
-  5, 8, 12, 7, 15, 10, 18, 22, 14, 9,
-  25, 30, 16, 20, 28, 35, 22, 18, 40, 32,
-  26, 38, 42, 30, 28, 45, 50, 36, 48, 55
-]
-
-const initBarChart = () => {
-  barChart = echarts.init(barChartRef.value)
-  barChart.setOption({
+// 初始化用户活跃趋势折线图（使用 weeklyTrend 中的 users 数据）
+const initLineChart = () => {
+  if (!lineChartRef.value) return
+  lineChart = echarts.init(lineChartRef.value)
+  const dates = dashboard.weeklyTrend.map(item => formatDate(item.date))
+  const userData = dashboard.weeklyTrend.map(item => item.users)
+  lineChart.setOption({
     tooltip: { trigger: 'axis' },
     xAxis: {
       type: 'category',
-      data: getLast7Days(),
+      data: dates,
       axisLabel: { color: '#666' }
     },
     yAxis: {
@@ -142,36 +151,7 @@ const initBarChart = () => {
     },
     grid: { left: '10%', right: '5%', top: '10%', bottom: '15%' },
     series: [{
-      data: aiCallData,
-      type: 'bar',
-      barWidth: '40%',
-      itemStyle: {
-        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: '#409EFF' },
-          { offset: 1, color: '#79bbff' }
-        ]),
-        borderRadius: [4, 4, 0, 0]
-      }
-    }]
-  })
-}
-
-const initLineChart = () => {
-  lineChart = echarts.init(lineChartRef.value)
-  lineChart.setOption({
-    tooltip: { trigger: 'axis' },
-    xAxis: {
-      type: 'category',
-      data: getLast30Days(),
-      axisLabel: { color: '#666', rotate: 45, interval: 4 }
-    },
-    yAxis: {
-      type: 'value',
-      axisLabel: { color: '#666' }
-    },
-    grid: { left: '10%', right: '5%', top: '10%', bottom: '20%' },
-    series: [{
-      data: userGrowthData,
+      data: userData,
       type: 'line',
       smooth: true,
       symbol: 'circle',
@@ -189,19 +169,32 @@ const initLineChart = () => {
 }
 
 const handleResize = () => {
-  barChart?.resize()
+  lineChart1?.resize()
   lineChart?.resize()
 }
 
+const fetchDashboard = async () => {
+  try {
+    // 调用 GET /api/admin/dashboard
+    // 响应拦截器已提取 data 字段
+    const data = await getDashboard()
+    Object.assign(dashboard, data)
+    // 数据加载完成后初始化图表
+    initTokenLineChart()
+    initLineChart()
+  } catch (err) {
+    console.error('获取仪表盘数据失败:', err)
+  }
+}
+
 onMounted(() => {
-  initBarChart()
-  initLineChart()
+  fetchDashboard()
   window.addEventListener('resize', handleResize)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize)
-  barChart?.dispose()
+  lineChart1?.dispose()
   lineChart?.dispose()
 })
 </script>
@@ -269,14 +262,84 @@ onBeforeUnmount(() => {
   width: 100%;
 }
 
-.welcome-card {
-  margin-top: 20px;
-  border-radius: 8px;
-}
-
 .card-header {
   font-size: 16px;
   font-weight: 600;
+  color: #303133;
+}
+
+/* 技能排行列表 */
+.skill-rank-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.skill-rank-item {
+  display: flex;
+  align-items: center;
+}
+
+.rank-badge {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: #eee;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  color: #909399;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.rank-badge.rank-top {
+  background-color: #409eff;
+  color: #fff;
+}
+
+.skill-name {
+  width: 100px;
+  font-size: 14px;
+  color: #303133;
+  flex-shrink: 0;
+}
+
+.skill-rate {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  width: 50px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* 今日概况 */
+.today-overview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.overview-item {
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.overview-label {
+  font-size: 13px;
+  color: #909399;
+  margin-bottom: 8px;
+}
+
+.overview-value {
+  font-size: 22px;
+  font-weight: bold;
   color: #303133;
 }
 </style>

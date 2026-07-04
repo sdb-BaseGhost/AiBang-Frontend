@@ -5,72 +5,85 @@
         <div class="card-header">
           <span>技能树管理</span>
           <div class="header-right">
-            <!-- ============================================ -->
-            <!-- 搜索过滤输入框 -->
-            <!-- ============================================ -->
-            <!-- v-model 绑定 searchKeyword 响应式变量 -->
-            <!-- 用户在输入框中输入关键字时，searchKeyword 会自动更新 -->
-            <!-- 由于 filteredTableData 计算属性依赖 searchKeyword -->
-            <!-- 所以 searchKeyword 变化时，filteredTableData 会自动重新计算 -->
-            <!-- 表格绑定的是 filteredTableData，因此表格会自动刷新显示过滤后的数据 -->
-            <!-- ============================================ -->
-            <el-input
-              v-model="searchKeyword"
-              placeholder="输入技能名称或分类进行搜索"
-              clearable
-              style="width: 280px; margin-right: 12px"
-              prefix-icon="Search"
-            />
             <el-select
-              v-model="filterCategory"
+              v-model="filterCategoryId"
               placeholder="按分类筛选"
               clearable
               style="width: 150px; margin-right: 12px"
-              @change="handleFilterChange"
+              @change="handleSearch"
             >
-              <el-option label="前端" value="前端" />
-              <el-option label="后端" value="后端" />
-              <el-option label="DevOps" value="DevOps" />
-              <el-option label="数据库" value="数据库" />
-              <el-option label="其他" value="其他" />
+              <el-option
+                v-for="cat in categories"
+                :key="cat.categoryId"
+                :label="cat.name"
+                :value="cat.categoryId"
+              />
             </el-select>
-            <el-button type="primary" @click="handleAdd">
+            <el-select
+              v-model="filterLevel"
+              placeholder="按等级筛选"
+              clearable
+              style="width: 130px; margin-right: 12px"
+              @change="handleSearch"
+            >
+              <el-option label="入门" value="BEGINNER" />
+              <el-option label="中级" value="INTERMEDIATE" />
+              <el-option label="高级" value="ADVANCED" />
+              <el-option label="专家" value="EXPERT" />
+            </el-select>
+            <el-input
+              v-model="searchKeyword"
+              placeholder="搜索技能名称"
+              clearable
+              style="width: 200px; margin-right: 12px"
+              prefix-icon="Search"
+              @clear="handleSearch"
+              @keyup.enter="handleSearch"
+            />
+            <el-button type="primary" @click="handleAddSkill">
               <el-icon><Plus /></el-icon>
               新增技能
+            </el-button>
+            <el-button type="success" @click="handleAddCategory" style="margin-left: 8px">
+              <el-icon><FolderAdd /></el-icon>
+              新增分类
             </el-button>
           </div>
         </div>
       </template>
 
-      <!-- ============================================ -->
+      
+
       <!-- 技能数据表格 -->
-      <!-- ============================================ -->
-      <!-- :data 绑定 filteredTableData 计算属性，而非原始数组 -->
-      <!-- 这样当 searchKeyword 或 filterCategory 变化时 -->
-      <!-- filteredTableData 会自动重新计算，表格会自动更新 -->
-      <!-- ============================================ -->
-      <el-table v-loading="loading" :data="filteredTableData" border stripe row-key="id">
-        <el-table-column prop="id" label="ID" width="80" />
-        <!-- 技能项（技能名称） -->
-        <el-table-column prop="name" label="技能项" min-width="120" />
-        <!-- 技能大类（分类） -->
-        <el-table-column prop="category" label="技能大类" width="120">
-          <template #default="{ row }">
-            <el-tag>{{ row.category }}</el-tag>
+      <el-table v-loading="loading" :data="skillList" border stripe row-key="skillId">
+        <el-table-column label="序号" width="70">
+          <template #default="{ $index }">
+            {{ (pagination.page - 1) * pagination.pageSize + $index + 1 }}
           </template>
         </el-table-column>
-        <el-table-column prop="level" label="等级" width="100">
+        <el-table-column prop="name" label="技能名称" min-width="120" />
+        <el-table-column prop="categoryName" label="分类" width="120">
           <template #default="{ row }">
-            <el-rate v-model="row.level" disabled :max="5" />
+            <el-tag>{{ row.categoryName }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="levelLabel" label="等级" width="80">
+          <template #default="{ row }">
+            <el-tag :type="levelTagType(row.level)">{{ row.levelLabel }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="description" label="描述" show-overflow-tooltip />
-        <!-- 更新时间 -->
-        <el-table-column prop="updateTime" label="更新时间" width="180" />
-        <el-table-column label="操作" width="200">
+        <el-table-column prop="userCount" label="学习人数" width="100" />
+        <el-table-column prop="completionRate" label="完成率" width="100">
           <template #default="{ row }">
-            <el-button type="primary" link @click="handleEdit(row)">编辑</el-button>
-            <el-button type="danger" link @click="handleDelete(row)">删除</el-button>
+            <el-progress :percentage="row.completionRate || 0" :stroke-width="6" />
+          </template>
+        </el-table-column>
+        <el-table-column prop="createTime" label="创建时间" width="170" />
+        <el-table-column label="操作" width="160" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" link @click="handleEditSkill(row)">编辑</el-button>
+            <el-button type="danger" link @click="handleDeleteSkill(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -79,7 +92,7 @@
         v-model:current-page="pagination.page"
         v-model:page-size="pagination.pageSize"
         :page-sizes="[10, 20, 50]"
-        :total="filteredTableData.length"
+        :total="pagination.total"
         layout="total, sizes, prev, pager, next, jumper"
         style="margin-top: 20px; justify-content: flex-end"
         @size-change="handleSizeChange"
@@ -87,315 +100,286 @@
       />
     </el-card>
 
-    <!-- 新增/编辑对话框 -->
-    <el-dialog v-model="dialogVisible" :title="dialogTitle" width="500px" destroy-on-close>
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="80px">
+    <!-- 新增/编辑技能对话框 -->
+    <el-dialog v-model="skillDialogVisible" :title="skillDialogTitle" width="500px" destroy-on-close>
+      <el-form ref="skillFormRef" :model="skillForm" :rules="skillRules" label-width="100px">
         <el-form-item label="技能名称" prop="name">
-          <el-input v-model="form.name" placeholder="请输入技能名称" />
+          <el-input v-model="skillForm.name" placeholder="请输入技能名称" />
         </el-form-item>
-        <el-form-item label="分类" prop="category">
-          <el-select v-model="form.category" placeholder="请选择分类" style="width: 100%">
-            <el-option label="前端" value="前端" />
-            <el-option label="后端" value="后端" />
-            <el-option label="DevOps" value="DevOps" />
-            <el-option label="数据库" value="数据库" />
-            <el-option label="其他" value="其他" />
+        <el-form-item label="所属分类" prop="categoryId">
+          <el-select v-model="skillForm.categoryId" placeholder="请选择分类" style="width: 100%">
+            <el-option
+              v-for="cat in categories"
+              :key="cat.categoryId"
+              :label="cat.name"
+              :value="cat.categoryId"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="等级" prop="level">
-          <el-rate v-model="form.level" :max="5" />
+          <el-select v-model="skillForm.level" placeholder="请选择等级" style="width: 100%">
+            <el-option label="入门" value="BEGINNER" />
+            <el-option label="中级" value="INTERMEDIATE" />
+            <el-option label="高级" value="ADVANCED" />
+            <el-option label="专家" value="EXPERT" />
+          </el-select>
         </el-form-item>
         <el-form-item label="描述" prop="description">
-          <el-input v-model="form.description" type="textarea" :rows="3" placeholder="请输入技能描述" />
+          <el-input v-model="skillForm.description" type="textarea" :rows="3" placeholder="请输入技能描述" />
+        </el-form-item>
+        <el-form-item label="排序" prop="sortOrder">
+          <el-input-number v-model="skillForm.sortOrder" :min="0" :max="999" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit">确定</el-button>
+        <el-button @click="skillDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitSkill">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 新增/编辑分类对话框 -->
+    <el-dialog v-model="categoryDialogVisible" :title="categoryDialogTitle" width="450px" destroy-on-close>
+      <el-form ref="categoryFormRef" :model="categoryForm" :rules="categoryRules" label-width="80px">
+        <el-form-item label="分类名称" prop="name">
+          <el-input v-model="categoryForm.name" placeholder="请输入分类名称" />
+        </el-form-item>
+        <el-form-item label="图标" prop="icon">
+          <el-input v-model="categoryForm.icon" placeholder="图标标识，如 code、monitor" />
+        </el-form-item>
+        <el-form-item label="排序" prop="sortOrder">
+          <el-input-number v-model="categoryForm.sortOrder" :min="0" :max="999" />
+        </el-form-item>
+        <el-form-item label="描述" prop="description">
+          <el-input v-model="categoryForm.description" type="textarea" :rows="2" placeholder="请输入分类描述" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="categoryDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitCategory">确定</el-button>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
-/**
- * ============================================
- * 技能树管理页面 - 组合式 API (Composition API)
- * ============================================
- * 核心功能：使用 computed 实现表格数据的实时过滤检索
- *
- * 关键知识点：
- * 1. ref - 创建响应式基本类型变量（如 searchKeyword）
- * 2. reactive - 创建响应式对象（如 pagination）
- * 3. computed - 创建计算属性，自动监听依赖变化并重新计算
- * 4. filter() - JavaScript 数组方法，根据条件过滤元素
- */
-
-// ============================================
-// 导入 Vue 3 组合式 API 核心函数
-// ============================================
-import { ref, reactive, computed, watch, onMounted } from 'vue'
-// 导入 Element Plus 图标组件
-import { Plus, Search } from '@element-plus/icons-vue'
-// 导入 Element Plus 消息提示和确认框
+import { ref, reactive, onMounted } from 'vue'
+import { Plus, FolderAdd } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  getSkillCategories, createSkillCategory, updateSkillCategory, deleteSkillCategory,
+  getSkillList, createSkill, updateSkill, deleteSkill
+} from '@/api/user'
 
-// ============================================
-// 响应式状态变量定义
-// ============================================
-
-// 表格加载状态，控制 loading 动画的显示
+// ==================== 响应式状态 ====================
 const loading = ref(false)
-
-// 技能列表数据（用于分页后的当前页数据展示）
-const skillList = ref([])
-
-// ============================================
-// 核心：搜索过滤关键字（响应式变量）
-// ============================================
-// 使用 ref 创建响应式变量，初始值为空字符串
-// 当用户在输入框中输入内容时，v-model 会自动更新此变量的值
-// filteredTableData 计算属性会监听此变量的变化
-// ============================================
 const searchKeyword = ref('')
+const filterCategoryId = ref('')
+const filterLevel = ref('')
+const skillList = ref([])
+const categories = ref([])
 
-// 对话框显示状态
-const dialogVisible = ref(false)
-// 对话框标题（新增/编辑）
-const dialogTitle = ref('')
-// 当前编辑的技能 ID（null 表示新增模式）
-const editId = ref(null)
-// 表单引用，用于表单验证
-const formRef = ref(null)
-// 分类筛选下拉框的值
-const filterCategory = ref('')
-
-// 分页配置（使用 reactive 创建响应式对象）
 const pagination = reactive({
-  page: 1,        // 当前页码
-  pageSize: 10,   // 每页显示条数
-  total: 0        // 总条数（会根据过滤结果动态更新）
+  page: 1,
+  pageSize: 10,
+  total: 0
 })
 
-let allData = [
-  { id: 1, name: 'Vue3', category: '前端', level: 5, description: 'Vue3 组合式 API、响应式原理、组件化开发', updateTime: '2024-06-01 10:00:00' },
-  { id: 2, name: 'React', category: '前端', level: 4, description: 'React Hooks、状态管理、虚拟 DOM', updateTime: '2024-06-02 11:00:00' },
-  { id: 3, name: 'TypeScript', category: '前端', level: 4, description: '类型系统、泛型、装饰器', updateTime: '2024-06-03 12:00:00' },
-  { id: 4, name: 'Node.js', category: '后端', level: 4, description: 'Express/Koa 框架、中间件、异步编程', updateTime: '2024-06-04 13:00:00' },
-  { id: 5, name: 'MySQL', category: '数据库', level: 3, description: 'SQL 查询优化、索引、事务', updateTime: '2024-06-05 14:00:00' },
-  { id: 6, name: 'Docker', category: 'DevOps', level: 3, description: '容器化部署、Dockerfile、Compose', updateTime: '2024-06-06 15:00:00' },
-  { id: 7, name: 'Git', category: 'DevOps', level: 4, description: '分支管理、合并策略、工作流', updateTime: '2024-06-07 16:00:00' },
-  { id: 8, name: 'CSS3', category: '前端', level: 4, description: 'Flex/Grid 布局、动画、响应式设计', updateTime: '2024-06-08 17:00:00' },
-  { id: 9, name: 'Python', category: '后端', level: 3, description: 'Flask/Django、数据处理、脚本编写', updateTime: '2024-06-09 18:00:00' },
-  { id: 10, name: 'Redis', category: '数据库', level: 3, description: '缓存策略、数据结构、分布式锁', updateTime: '2024-06-10 19:00:00' },
-  { id: 11, name: 'Nginx', category: 'DevOps', level: 3, description: '反向代理、负载均衡、HTTPS 配置', updateTime: '2024-06-11 20:00:00' },
-  { id: 12, name: 'Webpack', category: '前端', level: 3, description: '模块打包、Loader、Plugin 配置', updateTime: '2024-06-12 21:00:00' },
-]
-
-// ============================================
-// 核心：计算属性 filteredTableData（实时过滤检索）
-// ============================================
-/**
- * filteredTableData - 计算属性（computed）
- *
- * 工作原理：
- * 1. computed 会自动收集内部使用的响应式依赖（searchKeyword、filterCategory）
- * 2. 当 searchKeyword 或 filterCategory 发生变化时
- * 3. computed 会自动重新计算，返回新的过滤结果
- * 4. 表格绑定了 filteredTableData，因此会自动刷新显示
- *
- * 与 watch 的区别：
- * - watch：需要手动指定监听目标，并且需要手动更新数据
- * - computed：自动追踪依赖，自动计算，使用更简洁
- *
- * 过滤逻辑：
- * - 同时支持关键字搜索和分类筛选
- * - 关键字搜索：在技能名称（name）和分类（category）中进行模糊匹配
- * - 分类筛选：精确匹配分类
- * - 两个条件可以同时生效，实现组合过滤
- */
-const filteredTableData = computed(() => {
-  // 第一步：根据关键字进行过滤
-  // 如果 searchKeyword 为空或 null，则不进行关键字过滤，返回所有数据
-  // 否则，使用 filter() 方法过滤出包含关键字的项
-  let result = allData
-
-  // 关键字过滤：搜索技能名称或分类中是否包含输入的关键字
-  if (searchKeyword.value) {
-    // 将关键字转换为小写，实现不区分大小写的搜索
-    const keyword = searchKeyword.value.toLowerCase().trim()
-
-    // 使用 filter() 方法遍历每个技能项
-    // includes() 方法检查字符串是否包含指定的子字符串
-    // 这里同时搜索 name（技能项）和 category（技能大类）字段
-    result = result.filter(item =>
-      item.name.toLowerCase().includes(keyword) ||
-      item.category.toLowerCase().includes(keyword)
-    )
-  }
-
-  // 第二步：根据分类进行精确过滤
-  // 如果用户选择了分类，则只保留该分类下的技能
-  if (filterCategory.value) {
-    result = result.filter(item => item.category === filterCategory.value)
-  }
-
-  // 第三步：返回过滤后的数据
-  // 注意：分页总数会通过模板中的 filteredTableData.length 自动计算
-  // 这里不需要手动设置 pagination.total，保持计算属性的纯净性
-  return result
-})
-
-const form = reactive({
+// 技能对话框
+const skillDialogVisible = ref(false)
+const skillDialogTitle = ref('')
+const editSkillId = ref(null)
+const skillFormRef = ref(null)
+const skillForm = reactive({
   name: '',
-  category: '',
-  level: 3,
-  description: ''
+  categoryId: null,
+  level: 'BEGINNER',
+  description: '',
+  sortOrder: 0
 })
-
-const rules = {
+const skillRules = {
   name: [{ required: true, message: '请输入技能名称', trigger: 'blur' }],
-  category: [{ required: true, message: '请选择分类', trigger: 'change' }],
+  categoryId: [{ required: true, message: '请选择分类', trigger: 'change' }],
   level: [{ required: true, message: '请选择等级', trigger: 'change' }]
 }
 
-/**
- * fetchList - 获取技能列表数据（分页处理）
- *
- * 此函数负责：
- * 1. 从 filteredTableData（过滤后的数据）中获取当前页的数据
- * 2. 实现分页逻辑，根据当前页码和每页显示条数进行切片
- * 3. 模拟异步加载效果（实际项目中应该是 API 请求）
- *
- * 注意：过滤逻辑已经在 filteredTableData 计算属性中完成
- *       这里只需要负责分页展示
- */
-const fetchList = () => {
-  loading.value = true
-  // 模拟 API 请求延迟（实际项目中应替换为真实的 API 调用）
-  setTimeout(() => {
-    // filteredTableData 是计算属性，会根据 searchKeyword 和 filterCategory 自动更新
-    // 我们只需要对过滤后的数据进行分页处理即可
-    const filtered = filteredTableData.value
-
-    // 分页切片：根据当前页码计算起始和结束索引
-    const start = (pagination.page - 1) * pagination.pageSize
-    const end = start + pagination.pageSize
-
-    // 将分页后的数据赋值给 skillList，用于表格渲染
-    skillList.value = filtered.slice(start, end)
-    loading.value = false
-  }, 300)
-}
-
-const handleFilterChange = () => {
-  pagination.page = 1
-  fetchList()
-}
-
-// ============================================
-// 监听搜索关键字变化，自动刷新列表
-// ============================================
-/**
- * watch - 监听 searchKeyword 的变化
- *
- * 当用户在输入框中输入内容时：
- * 1. v-model 自动更新 searchKeyword 的值
- * 2. watch 监听到变化，执行回调函数
- * 3. 回调函数将页码重置为第 1 页（因为过滤后数据量可能变化）
- * 4. 调用 fetchList() 重新获取并展示过滤后的数据
- *
- * immediate: false 表示组件初始化时不立即执行（默认值）
- * 如果设置为 true，则组件初始化时会立即执行一次回调
- */
-watch(searchKeyword, (newValue, oldValue) => {
-  // 当搜索关键字变化时，重置到第 1 页
-  // 因为过滤后数据量可能减少，避免停留在不存在的页码
-  pagination.page = 1
-  // 重新获取列表数据（此时 filteredTableData 会自动重新计算）
-  fetchList()
+// 分类对话框
+const categoryDialogVisible = ref(false)
+const categoryDialogTitle = ref('')
+const editCategoryId = ref(null)
+const categoryFormRef = ref(null)
+const categoryForm = reactive({
+  name: '',
+  icon: '',
+  sortOrder: 0,
+  description: ''
 })
-
-const handleAdd = () => {
-  editId.value = null
-  dialogTitle.value = '新增技能'
-  form.name = ''
-  form.category = ''
-  form.level = 3
-  form.description = ''
-  dialogVisible.value = true
+const categoryRules = {
+  name: [{ required: true, message: '请输入分类名称', trigger: 'blur' }]
 }
 
-const handleEdit = (row) => {
-  editId.value = row.id
-  dialogTitle.value = '编辑技能'
-  form.name = row.name
-  form.category = row.category
-  form.level = row.level
-  form.description = row.description
-  dialogVisible.value = true
+// ==================== 辅助函数 ====================
+const levelTagType = (level) => {
+  const map = { BEGINNER: 'info', INTERMEDIATE: '', ADVANCED: 'warning', EXPERT: 'danger' }
+  return map[level] || ''
 }
 
-const handleDelete = async (row) => {
+// ==================== 数据加载 ====================
+
+/** 获取技能分类列表 */
+const fetchCategories = async () => {
   try {
-    await ElMessageBox.confirm('确定要删除该技能吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-    allData = allData.filter(item => item.id !== row.id)
-    ElMessage.success('删除成功')
-    fetchList()
-  } catch {
-    // cancelled
+    const data = await getSkillCategories()
+    categories.value = data
+  } catch (err) {
+    console.error('获取技能分类失败:', err)
   }
 }
 
-const handleSubmit = () => {
-  formRef.value.validate((valid) => {
-    if (!valid) return
+/** 获取技能列表 */
+const fetchSkills = async () => {
+  loading.value = true
+  try {
+    const data = await getSkillList({
+      page: pagination.page,
+      size: pagination.pageSize,
+      categoryId: filterCategoryId.value || undefined,
+      level: filterLevel.value || undefined,
+      keyword: searchKeyword.value || undefined
+    })
+    skillList.value = data.records
+    pagination.total = data.total
+  } catch (err) {
+    console.error('获取技能列表失败:', err)
+  } finally {
+    loading.value = false
+  }
+}
 
-    if (editId.value) {
-      const index = allData.findIndex(item => item.id === editId.value)
-      if (index !== -1) {
-        allData[index] = {
-          ...allData[index],
-          name: form.name,
-          category: form.category,
-          level: form.level,
-          description: form.description,
-          updateTime: new Date().toLocaleString('zh-CN')
-        }
-      }
-      ElMessage.success('编辑成功')
-    } else {
-      const newId = allData.length ? Math.max(...allData.map(s => s.id)) + 1 : 1
-      allData.push({
-        id: newId,
-        name: form.name,
-        category: form.category,
-        level: form.level,
-        description: form.description,
-        updateTime: new Date().toLocaleString('zh-CN')
-      })
-      ElMessage.success('新增成功')
-    }
-    dialogVisible.value = false
-    fetchList()
-  })
+const handleSearch = () => {
+  pagination.page = 1
+  fetchSkills()
 }
 
 const handleSizeChange = () => {
   pagination.page = 1
-  fetchList()
+  fetchSkills()
 }
 
 const handleCurrentChange = () => {
-  fetchList()
+  fetchSkills()
 }
 
+// ==================== 技能 CRUD ====================
+
+const handleAddSkill = () => {
+  editSkillId.value = null
+  skillDialogTitle.value = '新增技能'
+  skillForm.name = ''
+  skillForm.categoryId = null
+  skillForm.level = 'BEGINNER'
+  skillForm.description = ''
+  skillForm.sortOrder = 0
+  skillDialogVisible.value = true
+}
+
+const handleEditSkill = (row) => {
+  editSkillId.value = row.skillId
+  skillDialogTitle.value = '编辑技能'
+  skillForm.name = row.name
+  skillForm.categoryId = row.categoryId
+  skillForm.level = row.level
+  skillForm.description = row.description
+  skillForm.sortOrder = 0
+  skillDialogVisible.value = true
+}
+
+const handleDeleteSkill = async (row) => {
+  try {
+    await ElMessageBox.confirm(`确定要删除技能「${row.name}」吗？`, '提示', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    await deleteSkill(row.skillId)
+    ElMessage.success('删除成功')
+    fetchSkills()
+  } catch (err) {
+    if (err !== 'cancel') {
+      console.error('删除技能失败:', err)
+    }
+  }
+}
+
+const submitSkill = async () => {
+  if (!skillFormRef.value) return
+  try {
+    await skillFormRef.value.validate()
+    const payload = {
+      name: skillForm.name,
+      categoryId: skillForm.categoryId,
+      level: skillForm.level,
+      description: skillForm.description,
+      sortOrder: skillForm.sortOrder
+    }
+    if (editSkillId.value) {
+      await updateSkill(editSkillId.value, payload)
+      ElMessage.success('编辑成功')
+    } else {
+      await createSkill(payload)
+      ElMessage.success('新增成功')
+    }
+    skillDialogVisible.value = false
+    fetchSkills()
+  } catch (err) {
+    // 表单验证失败时会 reject
+    if (err !== false) {
+      console.error('保存技能失败:', err)
+    }
+  }
+}
+
+// ==================== 分类 CRUD ====================
+
+const handleAddCategory = () => {
+  editCategoryId.value = null
+  categoryDialogTitle.value = '新增分类'
+  categoryForm.name = ''
+  categoryForm.icon = ''
+  categoryForm.sortOrder = 0
+  categoryForm.description = ''
+  categoryDialogVisible.value = true
+}
+
+const submitCategory = async () => {
+  if (!categoryFormRef.value) return
+  try {
+    await categoryFormRef.value.validate()
+    const payload = {
+      name: categoryForm.name,
+      icon: categoryForm.icon,
+      sortOrder: categoryForm.sortOrder,
+      description: categoryForm.description
+    }
+    if (editCategoryId.value) {
+      await updateSkillCategory(editCategoryId.value, payload)
+      ElMessage.success('分类更新成功')
+    } else {
+      await createSkillCategory(payload)
+      ElMessage.success('分类创建成功')
+    }
+    categoryDialogVisible.value = false
+    fetchCategories()
+  } catch (err) {
+    if (err !== false) {
+      console.error('保存分类失败:', err)
+    }
+  }
+}
+
+// ==================== 生命周期 ====================
 onMounted(() => {
-  fetchList()
+  fetchCategories()
+  fetchSkills()
 })
 </script>
 
@@ -415,14 +399,38 @@ onMounted(() => {
   align-items: center;
 }
 
-/* 搜索输入框样式优化 */
-:deep(.el-input__wrapper) {
-  border-radius: 20px;
+.category-stats {
+  margin-bottom: 20px;
 }
 
-/* 搜索图标样式 */
-:deep(.el-input__prefix) {
-  display: flex;
-  align-items: center;
+.category-card {
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+  text-align: center;
+  margin-bottom: 12px;
+  transition: background 0.2s;
+}
+
+.category-card:hover {
+  background: #ecf5ff;
+}
+
+.cat-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 4px;
+}
+
+.cat-count {
+  font-size: 12px;
+  color: #909399;
+}
+
+.cat-rate {
+  font-size: 12px;
+  color: #67c23a;
+  margin-top: 2px;
 }
 </style>

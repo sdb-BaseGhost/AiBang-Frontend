@@ -11,8 +11,8 @@ const request = axios.create({
 // 请求拦截器
 request.interceptors.request.use(
   config => {
-    // 从 localStorage 获取 token
-    const token = localStorage.getItem('token')
+    // 从 localStorage 获取 accessToken
+    const token = localStorage.getItem('accessToken')
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`
     }
@@ -26,15 +26,33 @@ request.interceptors.request.use(
 // 响应拦截器
 request.interceptors.response.use(
   response => {
-    return response.data
+    const res = response.data
+    // 后端统一返回格式: { code: 200, message: 'success', data: {...} }
+    if (res.code !== 200) {
+      // Token 过期
+      if (res.code === 401) {
+        ElMessage.error('登录已过期，请重新登录')
+        localStorage.removeItem('accessToken')
+        localStorage.removeItem('refreshToken')
+        localStorage.removeItem('userInfo')
+        router.push('/login')
+      }
+      // 返回整个响应体，让调用方自行处理
+      return Promise.reject(res)
+    }
+    // 成功时只返回 data 字段
+    return res.data
   },
   error => {
     const { response } = error
     if (response) {
+      const data = response.data
       switch (response.status) {
         case 401:
-          ElMessage.error('授权认证失败，请重新登录')
-          localStorage.removeItem('token')
+          ElMessage.error(data?.message || '授权认证失败，请重新登录')
+          localStorage.removeItem('accessToken')
+          localStorage.removeItem('refreshToken')
+          localStorage.removeItem('userInfo')
           router.push('/login')
           break
         case 403:
@@ -47,7 +65,7 @@ request.interceptors.response.use(
           ElMessage.error('服务器错误')
           break
         default:
-          ElMessage.error(response.data?.message || '请求失败')
+          ElMessage.error(data?.message || '请求失败')
       }
     } else {
       ElMessage.error('网络连接失败')

@@ -1,49 +1,192 @@
 import request from '@/utils/request'
 
-// Mock 用户数据（API 层兜底）
-const mockUsers = [
-  { id: 1, username: 'admin', email: 'admin@example.com', phone: '13800138001', status: 1, createTime: '2024-01-01 10:00:00' },
-  { id: 2, username: 'user1', email: 'user1@example.com', phone: '13800138002', status: 1, createTime: '2024-01-02 11:00:00' },
-  { id: 3, username: 'user2', email: 'user2@example.com', phone: '13800138003', status: 0, createTime: '2024-01-03 12:00:00' },
-  { id: 4, username: 'user3', email: 'user3@example.com', phone: '13800138004', status: 1, createTime: '2024-01-04 13:00:00' },
-  { id: 5, username: 'user4', email: 'user4@example.com', phone: '13800138005', status: 1, createTime: '2024-01-05 14:00:00' },
-  { id: 6, username: 'user5', email: 'user5@example.com', phone: '13800138006', status: 0, createTime: '2024-01-06 15:00:00' },
-  { id: 7, username: 'user6', email: 'user6@example.com', phone: '13800138007', status: 1, createTime: '2024-01-07 16:00:00' },
-  { id: 8, username: 'user7', email: 'user7@example.com', phone: '13800138008', status: 1, createTime: '2024-01-08 17:00:00' },
-  { id: 9, username: 'user8', email: 'user8@example.com', phone: '13800138009', status: 0, createTime: '2024-01-09 18:00:00' },
-  { id: 10, username: 'user9', email: 'user9@example.com', phone: '13800138010', status: 1, createTime: '2024-01-10 19:00:00' },
-  { id: 11, username: 'user10', email: 'user10@example.com', phone: '13800138011', status: 1, createTime: '2024-01-11 20:00:00' },
-  { id: 12, username: 'user11', email: 'user11@example.com', phone: '13800138012', status: 1, createTime: '2024-01-12 21:00:00' },
-]
+// ==================== 认证相关 (共用) ====================
 
-// 登录
+/** 登录 */
 export function loginApi(data) {
-  return request.post('/login', data).catch(() => {
-    // Mock 兜底：模拟登录成功
-    const { username } = data
-    return {
-      token: 'mock-token-' + Date.now(),
-      userInfo: { id: 1, username, role: 'admin' }
-    }
+  return request.post('/auth/login', data)
+}
+
+/** 注册 */
+export function registerApi(data) {
+  return request.post('/auth/register', data)
+}
+
+/** 刷新 Token */
+export function refreshTokenApi(data) {
+  return request.post('/auth/refresh', data)
+}
+
+/** 获取当前用户信息 */
+export function getMe() {
+  return request.get('/auth/me')
+}
+
+// ==================== 用户资料管理 (共用) ====================
+
+/** 更新个人资料 */
+export function updateProfile(data) {
+  return request.put('/user/profile', data)
+}
+
+/** 修改密码 */
+export function changePassword(data) {
+  return request.put('/user/password', data)
+}
+
+// ==================== 管理员 - 用户管理 ====================
+
+/** 获取用户列表（管理版） */
+export function getAdminUserList(params) {
+  return request.get('/admin/users', { params })
+}
+
+/** 获取用户详情（管理版） */
+export function getAdminUserDetail(userId) {
+  return request.get(`/admin/user/${userId}`)
+}
+
+/** 修改用户角色 */
+export function updateUserRole(userId, data) {
+  return request.put(`/admin/user/${userId}/role`, data)
+}
+
+/** 禁用/启用用户 */
+export function updateUserStatus(userId, data) {
+  return request.put(`/admin/user/${userId}/status`, data)
+}
+
+/** 重置用户密码 */
+export function resetUserPassword(userId) {
+  return request.post(`/admin/user/${userId}/reset-password`)
+}
+
+/** 批量导入用户 */
+export function importUsers(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return request.post('/admin/user/import', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
   })
 }
 
-// 获取用户列表
-export function getUserList(params) {
-  return request.get('/users', { params }).catch(() => {
-    // Mock 兜底：从本地数据筛选 + 分页
-    let filtered = mockUsers
-    if (params?.username) {
-      filtered = mockUsers.filter(u =>
-        u.username.toLowerCase().includes(params.username.toLowerCase())
-      )
-    }
-    const page = params?.page || 1
-    const pageSize = params?.pageSize || 10
-    const start = (page - 1) * pageSize
-    return {
-      list: filtered.slice(start, start + pageSize),
-      total: filtered.length
-    }
+/** 导出用户数据 */
+export function exportUsers(params) {
+  return request.get('/admin/user/export', {
+    params,
+    responseType: 'blob'
+  })
+}
+
+// ==================== 管理员 - 仪表盘 ====================
+
+/** 获取仪表盘统计数据 */
+export function getDashboard(params) {
+  return request.get('/admin/dashboard', { params })
+}
+
+/** 获取用户增长趋势 */
+export function getUserTrend(params) {
+  return request.get('/admin/user-trend', { params })
+}
+
+/** 获取学习活跃度排行 */
+export function getLearningRanking(params) {
+  return request.get('/admin/learning-ranking', { params })
+}
+
+/** 获取学习记录（已完成的章节记录） */
+export function getLearningRecords(params) {
+  return request.get('/admin/learning-records', { params })
+}
+
+// ==================== 管理员 - 技能树管理 ====================
+
+/** 获取技能分类列表 */
+export function getSkillCategories() {
+  return request.get('/admin/skill/categories')
+}
+
+/** 创建技能分类 */
+export function createSkillCategory(data) {
+  return request.post('/admin/skill/category', data)
+}
+
+/** 更新技能分类 */
+export function updateSkillCategory(categoryId, data) {
+  return request.put(`/admin/skill/category/${categoryId}`, data)
+}
+
+/** 删除技能分类 */
+export function deleteSkillCategory(categoryId) {
+  return request.delete(`/admin/skill/category/${categoryId}`)
+}
+
+/** 获取技能列表（管理版） */
+export function getSkillList(params) {
+  return request.get('/admin/skill/list', { params })
+}
+
+/** 创建技能 */
+export function createSkill(data) {
+  return request.post('/admin/skill', data)
+}
+
+/** 更新技能 */
+export function updateSkill(skillId, data) {
+  return request.put(`/admin/skill/${skillId}`, data)
+}
+
+/** 删除技能 */
+export function deleteSkill(skillId) {
+  return request.delete(`/admin/skill/${skillId}`)
+}
+
+/** 获取技能统计 */
+export function getSkillStats() {
+  return request.get('/admin/skill/stats')
+}
+
+// ==================== 管理员 - 系统配置 ====================
+
+/** 获取系统配置 */
+export function getSystemConfig() {
+  return request.get('/admin/config')
+}
+
+/** 更新系统配置 */
+export function updateSystemConfig(data) {
+  return request.put('/admin/config', data)
+}
+
+// ==================== 管理员 - 日志 ====================
+
+/** 获取操作日志 */
+export function getOperationLogs(params) {
+  return request.get('/admin/logs/operation', { params })
+}
+
+/** 获取 AI 调用日志 */
+export function getAiLogs(params) {
+  return request.get('/admin/logs/ai', { params })
+}
+
+// ==================== 文件上传 ====================
+
+/** 上传头像 */
+export function uploadAvatar(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return request.post('/file/avatar', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
+
+/** 上传简历文件 */
+export function uploadResume(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return request.post('/file/resume', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
   })
 }
